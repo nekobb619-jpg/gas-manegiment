@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>2台持ち給油＆愛車メンテナンス</title>
+  <style>
+    :root {
+      --primary: #1a73e8;
+      --bg: #f4f6f9;
+      --card-bg: #ffffff;
+      --text: #202124;
+      --sub-text: #5f6368;
+      --accent-s: #1a73e8;
+      --accent-e: #e65100;
+      --success: #1e8e3e;
+      --warning: #d93025;
+      --highway: #7c4dff;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); margin: 0; padding: 12px;
+      max-width: 480px; margin-left: auto; margin-right: auto;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .sync-bar { text-align: right; font-size: 0.7rem; margin-bottom: 6px; min-height: 14px; }
+
+    .stagger-banner {
+      background: linear-gradient(135deg, #1e293b, #334155);
+      color: white; border-radius: 16px; padding: 16px; margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    .stagger-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; }
+    .stagger-status { font-size: 1.05rem; font-weight: bold; margin: 6px 0; color: #38bdf8; }
+
+    /* 完全タップ対応 ラジオタブ */
+    .car-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .car-tabs input[type="radio"] { display: none; }
+    .tab-label {
+      flex: 1; padding: 12px 4px; border: 2px solid #ccc; background: #fff;
+      border-radius: 12px; font-weight: bold; font-size: 0.92rem; cursor: pointer;
+      text-align: center; color: var(--sub-text); user-select: none; box-sizing: border-box;
+    }
+    #radioScar:checked + .tab-label {
+      border-color: var(--accent-s); background: #e8f0fe; color: var(--accent-s);
+    }
+    #radioEcar:checked + .tab-label {
+      border-color: var(--accent-e); background: #fff3e0; color: var(--accent-e);
+    }
+
+    .card {
+      background: var(--card-bg); border-radius: 16px; padding: 18px; margin-bottom: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    h2 { font-size: 1rem; margin: 0 0 12px 0; display: flex; align-items: center; justify-content: space-between; }
+
+    .mode-switch { display: flex; background: #e2e8f0; border-radius: 10px; padding: 4px; margin-bottom: 14px; }
+    .mode-switch input[type="radio"] { display: none; }
+    .mode-label {
+      flex: 1; padding: 10px 2px; text-align: center; font-size: 0.8rem; font-weight: bold;
+      border-radius: 8px; cursor: pointer; color: var(--sub-text); user-select: none;
+    }
+    #modeFuel:checked + .mode-label, #modeMemo:checked + .mode-label {
+      background: #fff; color: var(--text); box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .form-group { margin-bottom: 12px; }
+    label { display: block; font-size: 0.8rem; font-weight: bold; color: var(--sub-text); margin-bottom: 4px; }
+    input[type="text"], input[type="number"], input[type="date"] {
+      width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 8px;
+      box-sizing: border-box; font-size: 1rem; background: #fafafa; -webkit-appearance: none;
+    }
+    input:focus { border-color: var(--primary); outline: none; background: #fff; }
+
+    .checkbox-group {
+      display: flex; align-items: center; gap: 8px; background: #f3e5f5;
+      padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; cursor: pointer;
+    }
+    .checkbox-group input { width: 20px; height: 20px; cursor: pointer; }
+    .checkbox-group label { margin: 0; color: var(--highway); font-size: 0.85rem; cursor: pointer; }
+
+    .row { display: flex; gap: 10px; }
+    .col { flex: 1; }
+
+    .submit-btn {
+      width: 100%; padding: 14px; border: none; border-radius: 10px;
+      font-size: 1rem; font-weight: bold; color: white; cursor: pointer;
+      box-shadow: 0 3px 6px rgba(0,0,0,0.15); transition: background 0.2s;
+    }
+    .btn-s { background: var(--accent-s); }
+    .btn-e { background: var(--accent-e); }
+
+    /* 画面内メッセージ通知バー */
+    .msg-box {
+      padding: 10px 12px; border-radius: 8px; font-size: 0.85rem; font-weight: bold;
+      margin-bottom: 12px; display: none; text-align: center;
+    }
+    .msg-error { background: #fce8e6; color: var(--warning); border: 1px solid var(--warning); }
+    .msg-success { background: #e6f4ea; color: var(--success); border: 1px solid var(--success); }
+
+    .gauge-container { background: #e0e0e0; border-radius: 10px; height: 10px; overflow: hidden; margin: 8px 0; }
+    .gauge-bar { height: 100%; width: 0%; transition: width 0.5s ease; background: var(--success); }
+
+    .badge-grid { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .badge { background: #f1f3f4; padding: 6px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: bold; }
+    .badge-highway { background: #f3e5f5; color: var(--highway); }
+
+    .maint-status-item {
+      background: #f8fafc; border-left: 4px solid var(--primary); border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px; font-size: 0.85rem;
+    }
+    .maint-status-item.alert { border-left-color: var(--warning); background: #fce8e6; }
+    .maint-title { font-weight: bold; font-size: 0.88rem; margin-bottom: 2px; }
+
+    .timeline { position: relative; padding-left: 20px; margin-top: 10px; }
+    .timeline::before {
+      content: ''; position: absolute; left: 7px; top: 8px; bottom: 8px;
+      width: 2px; background: #e2e8f0;
+    }
+    .tl-item { position: relative; margin-bottom: 14px; }
+    .tl-dot {
+      position: absolute; left: -20px; top: 3px; width: 14px; height: 14px;
+      border-radius: 50%; border: 2px solid white;
+    }
+    .tl-dot.s-car { background: var(--accent-s); box-shadow: 0 0 0 2px var(--accent-s); }
+    .tl-dot.e-car { background: var(--accent-e); box-shadow: 0 0 0 2px var(--accent-e); }
+    .tl-content { background: #f8fafc; border-radius: 10px; padding: 10px 12px; border: 1px solid #e2e8f0; }
+    .tl-header { display: flex; justify-content: space-between; font-weight: bold; font-size: 0.88rem; }
+    .tl-sub { font-size: 0.75rem; color: var(--sub-text); margin-top: 2px; }
+    .day-tag { font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    .day-sat { background: #e8f0fe; color: var(--accent-s); }
+    .day-weekday { background: #fff3e0; color: var(--accent-e); }
+
+    .history-item { border-bottom: 1px solid #f0f0f0; padding: 10px 0; font-size: 0.82rem; }
+    .history-head { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 2px; }
+  </style>
+</head>
+<body>
+
+<div class="sync-bar" id="cloudSyncIndicator"></div>
+
+<div class="stagger-banner">
+  <div class="stagger-title">🔄 2台給油サイクル状況（目標:10日ズレ）</div>
+  <div id="staggerStatus" class="stagger-status">データ計算中...</div>
+</div>
+
+<div class="car-tabs">
+  <input type="radio" id="radioScar" name="carSelect" value="S-car" checked onchange="switchCar('S-car')">
+  <label for="radioScar" class="tab-label">🚘 S-car<br><small style="font-size:0.7rem;">(土日給油)</small></label>
+
+  <input type="radio" id="radioEcar" name="carSelect" value="E-car" onchange="switchCar('E-car')">
+  <label for="radioEcar" class="tab-label">🚐 E-car<br><small style="font-size:0.7rem;">(平日給油)</small></label>
+</div>
+
+<div class="card">
+  <h2>
+    <span>✍️ データ入力</span>
+    <span id="carBadge" style="font-size:0.8rem; padding:2px 8px; border-radius:12px; background:#e8f0fe; color:var(--accent-s);">S-car</span>
+  </h2>
+
+  <div class="mode-switch">
+    <input type="radio" id="modeFuel" name="modeSelect" value="fuel" checked onchange="setMode('fuel')">
+    <label for="modeFuel" class="mode-label">⛽️ 給油した</label>
+
+    <input type="radio" id="modeMemo" name="modeSelect" value="memo" onchange="setMode('memo')">
+    <label for="modeMemo" class="mode-label">📌 給油なしメモ</label>
+  </div>
+
+  <div class="checkbox-group">
+    <input type="checkbox" id="isHighway">
+    <label for="isHighway">🛣️ 高速道路を利用した（旅行・ドライブ）</label>
+  </div>
+
+  <div class="row">
+    <div class="col form-group">
+      <label for="date">日付</label>
+      <input type="date" id="date">
+    </div>
+    <div class="col form-group">
+      <label for="odo">ODO (トータルkm)</label>
+      <input type="number" id="odo" inputmode="numeric" placeholder="例: 45000">
+    </div>
+  </div>
+
+  <div id="fuelFields">
+    <div class="row">
+      <div class="col form-group">
+        <label for="rangeBefore">給油【前】航続距離</label>
+        <input type="number" id="rangeBefore" inputmode="numeric" placeholder="例: 98">
+      </div>
+      <div class="col form-group">
+        <label for="rangeAfter">給油【後】航続距離 *必須</label>
+        <input type="number" id="rangeAfter" inputmode="numeric" placeholder="例: 403">
+      </div>
+    </div>
+    <div class="row">
+      <div class="col form-group">
+        <label for="fuelAmount">給油量 (L)</label>
+        <input type="number" id="fuelAmount" step="0.01" inputmode="decimal" placeholder="例: 18.41">
+      </div>
+      <div class="col form-group">
+        <label for="dailyDistFuel">1日の走行目安 (km)</label>
+        <input type="number" id="dailyDistFuel" inputmode="numeric" value="20" onchange="saveDailyDefault()">
+      </div>
+    </div>
+  </div>
+
+  <div id="memoFields" style="display:none;">
+    <div class="row">
+      <div class="col form-group">
+        <label for="currentRangeMemo">現在の航続可能距離 (km) *必須</label>
+        <input type="number" id="currentRangeMemo" inputmode="numeric" placeholder="例: 220">
+      </div>
+      <div class="col form-group">
+        <label for="dailyDistMemo">1日の走行目安 (km)</label>
+        <input type="number" id="dailyDistMemo" inputmode="numeric" value="20" onchange="saveDailyDefault()">
+      </div>
+    </div>
+  </div>
+
+  <div id="msgBox" class="msg-box"></div>
+
+  <button type="button" id="submitBtn" class="submit-btn btn-s" onclick="calculate()">記録＆タイムライン更新</button>
+</div>
+
+<div class="card">
+  <h2>
+    <span>🔧 メンテナンス状況</span>
+    <button type="button" onclick="toggleMaintEdit()" style="font-size:0.75rem; background:none; border:none; color:var(--primary); cursor:pointer;">[ 設定変更 ]</button>
+  </h2>
+
+  <div id="maintDisplay">
+    <div id="maintShaKen" class="maint-status-item">
+      <div class="maint-title">🚗 次回車検予定</div>
+      <div id="shakenText">設定されていません</div>
+    </div>
+    <div id="maintOil" class="maint-status-item">
+      <div class="maint-title">🛢️ オイル交換</div>
+      <div id="oilText">設定されていません</div>
+    </div>
+    <div id="maintFilter" class="maint-status-item">
+      <div class="maint-title">🛢️ オイルフィルター（エレメント）</div>
+      <div id="filterText">設定されていません</div>
+    </div>
+  </div>
+
+  <div id="maintForm" style="display:none; background:#f8fafc; padding:12px; border-radius:8px; margin-top:8px;">
+    <div class="form-group">
+      <label for="shakenDate">次回 車検満了日</label>
+      <input type="date" id="shakenDate">
+    </div>
+    <div class="form-group">
+      <label for="lastOilOdo">前回 オイル交換時のODO (km)</label>
+      <input type="number" id="lastOilOdo" inputmode="numeric" placeholder="例: 42000">
+    </div>
+    <div class="form-group">
+      <label for="lastFilterOdo">前回 フィルター交換時のODO (km)</label>
+      <input type="number" id="lastFilterOdo" inputmode="numeric" placeholder="例: 40000">
+    </div>
+    <button type="button" onclick="saveMaintSettings()" style="width:100%; padding:8px; background:var(--primary); color:white; border:none; border-radius:6px; font-weight:bold; margin-top:6px;">保存する</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📅 今後の給油タイムライン（直近4回分）</h2>
+  <div id="timelineList" class="timeline">
+    <div style="font-size:0.85rem; color:#888;">データを登録するとタイムラインが生成されます</div>
+  </div>
+</div>
+
+<div id="resultCard" class="card" style="display:none;">
+  <h2>📊 試算・分析結果</h2>
+  <label>現在の想定残り走行状況</label>
+  <div class="gauge-container">
+    <div id="gaugeBar" class="gauge-bar"></div>
+  </div>
+  <div class="badge-grid">
+    <div class="badge">車載想定燃費: <span id="meterEcoVal">-</span> km/L</div>
+    <div class="badge">今回実燃費: <span id="realEcoVal">-</span> km/L</div>
+    <div id="highwayBadge" class="badge badge-highway" style="display:none;">🛣️ 高速走行あり</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📋 走行・給油ログ</h2>
+  <div id="historyList">履歴がありません</div>
+  <button type="button" onclick="clearHistory()" style="background:none; border:none; color:#dc3545; font-size:0.75rem; margin-top:12px; cursor:pointer; text-decoration:underline;">履歴データを全消去</button>
+</div>
+
+<script>
+/* =========================================================
+   gas_manegiment - 2台持ち給油＆愛車メンテナンス
+   単一HTMLファイル / vanilla JS / localStorage即時保存 + GASクラウド同期
+   ========================================================= */
+
+const STORAGE_KEY = 'gasManegimentState_v1';
+
+function defaultState() {
+  return {
+    cars: {
+      'S-car': { fuel_day_pattern: '土日給油', daily_distance_default: 20, shaken_date: '', last_oil_change_odo: 0, last_filter_change_odo: 0 },
+      'E-car': { fuel_day_pattern: '平日給油', daily_distance_default: 15, shaken_date: '', last_oil_change_odo: 0, last_filter_change_odo: 0 }
+    },
+    history: []
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Object.assign(defaultState(), parsed, { cars: Object.assign(defaultState().cars, parsed.cars || {}) });
+    }
+  } catch (e) {}
+  return defaultState();
+}
+
+let state = loadState();
+
+/* ================= gas_manegiment: GASをデータ置き場として使うクラウド同期 =================
+   計算・ロジックはすべてこのWebアプリ側に残す（GASは構造化シートへの読み書きだけを行う）。
+   起動時：localStorageの内容を即座に表示 → 裏でCAR_LOADを取りに行き、届いたら差し替えて再描画。
+   保存時：これまで通りlocalStorageへ即書き込み → 少し待って（連続呼び出しをまとめて）CAR_SAVE_ALLを送信。
+   yumekawa/okane2026と同じ共有GASプロジェクト・同じデプロイURLを使う。
+   ================================================================================= */
+const GAS_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzO9Ju2xrzQuHpeYAnxIvRtBkY8sPGpyDe4Y1lSlf9QQJmtT6cYCvtI_hGzzcAAlIXS/exec";
+let cloudSyncTimer = null;
+let cloudSyncInFlight = false;
+let lastCloudSyncFailed = false;
+
+function postToCarGas(payload) {
+  return fetch(GAS_WEBAPP_URL, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify(payload) })
+    .then(res => res.json());
+}
+
+function scheduleCloudSync() {
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(syncStateToCloud, 900);
+  renderCloudSyncIndicator();
+}
+
+function syncStateToCloud() {
+  if (cloudSyncInFlight) { scheduleCloudSync(); return; }
+  cloudSyncInFlight = true;
+  renderCloudSyncIndicator();
+  postToCarGas({ action: "CAR_SAVE_ALL", data: state })
+    .then(res => {
+      cloudSyncInFlight = false;
+      if (res && res.status === "SUCCESS") {
+        if (lastCloudSyncFailed) { lastCloudSyncFailed = false; }
+      } else {
+        lastCloudSyncFailed = true;
+      }
+      renderCloudSyncIndicator();
+    })
+    .catch(err => {
+      cloudSyncInFlight = false;
+      lastCloudSyncFailed = true;
+      console.error('gas_manegiment cloud sync failed', err);
+      renderCloudSyncIndicator();
+    });
+}
+
+function renderCloudSyncIndicator() {
+  const el = document.getElementById('cloudSyncIndicator');
+  if (!el) return;
+  if (cloudSyncInFlight) {
+    el.innerHTML = `<span style="color:var(--sub-text);">⏳ クラウドに同期中…</span>`;
+  } else if (lastCloudSyncFailed) {
+    el.innerHTML = `<span style="color:var(--warning);">⚠ クラウド同期エラー(この端末には保存済み)</span>`;
+  } else {
+    el.innerHTML = `<span style="color:var(--success);">☁ クラウド同期ずみ</span>`;
+  }
+}
+
+function syncStateFromCloud() {
+  return postToCarGas({ action: "CAR_LOAD" })
+    .then(res => {
+      if (!res || res.status !== "SUCCESS" || !res.data) return;
+      const d = res.data;
+      const hasAnyCloudData = (d.history && d.history.length) || (d.cars && Object.keys(d.cars).length);
+      if (!hasAnyCloudData) return; // クラウドがまだ空(初回)なら、今のローカルデータを正として次のsaveで送る
+      state = {
+        cars: Object.assign(defaultState().cars, d.cars || {}),
+        history: d.history || []
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      loadCarDefaults();
+      updateStaggerDashboard();
+      renderTimeline();
+      renderHistory();
+      renderMaintStatus();
+    })
+    .catch(err => console.error('gas_manegiment initial cloud load failed', err));
+}
+
+function persistState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  scheduleCloudSync();
+}
+
+let currentCar = 'S-car';
+let currentMode = 'fuel';
+
+document.getElementById('date').value = new Date().toISOString().split('T')[0];
+
+window.onload = function() {
+  loadCarDefaults();
+  updateStaggerDashboard();
+  renderTimeline();
+  renderHistory();
+  renderMaintStatus();
+};
+
+function showMsg(text, isError = true) {
+  const msgBox = document.getElementById('msgBox');
+  msgBox.innerText = text;
+  msgBox.className = isError ? 'msg-box msg-error' : 'msg-box msg-success';
+  msgBox.style.display = 'block';
+}
+
+function hideMsg() {
+  document.getElementById('msgBox').style.display = 'none';
+}
+
+function switchCar(car) {
+  hideMsg();
+  currentCar = car;
+  const carBadge = document.getElementById('carBadge');
+  const submitBtn = document.getElementById('submitBtn');
+
+  if (car === 'S-car') {
+    carBadge.innerText = 'S-car';
+    carBadge.style.background = '#e8f0fe';
+    carBadge.style.color = 'var(--accent-s)';
+    submitBtn.className = 'submit-btn btn-s';
+  } else {
+    carBadge.innerText = 'E-car';
+    carBadge.style.background = '#fff3e0';
+    carBadge.style.color = 'var(--accent-e)';
+    submitBtn.className = 'submit-btn btn-e';
+  }
+  loadCarDefaults();
+  renderMaintStatus();
+}
+
+function setMode(mode) {
+  hideMsg();
+  currentMode = mode;
+  if (mode === 'memo') {
+    document.getElementById('fuelFields').style.display = 'none';
+    document.getElementById('memoFields').style.display = 'block';
+  } else {
+    document.getElementById('fuelFields').style.display = 'block';
+    document.getElementById('memoFields').style.display = 'none';
+  }
+}
+
+function saveDailyDefault() {
+  const val = parseFloat(currentMode === 'fuel'
+    ? document.getElementById('dailyDistFuel').value
+    : document.getElementById('dailyDistMemo').value) || (currentCar === 'S-car' ? 20 : 15);
+  if (!state.cars[currentCar]) state.cars[currentCar] = defaultState().cars[currentCar];
+  state.cars[currentCar].daily_distance_default = val;
+  document.getElementById('dailyDistFuel').value = val;
+  document.getElementById('dailyDistMemo').value = val;
+  persistState();
+}
+
+function loadCarDefaults() {
+  const carData = state.cars[currentCar];
+  const defaultVal = carData ? carData.daily_distance_default : (currentCar === 'S-car' ? 20 : 15);
+  document.getElementById('dailyDistFuel').value = defaultVal;
+  document.getElementById('dailyDistMemo').value = defaultVal;
+}
+
+function toggleMaintEdit() {
+  const form = document.getElementById('maintForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  const carData = state.cars[currentCar] || {};
+  document.getElementById('shakenDate').value = carData.shaken_date || '';
+  document.getElementById('lastOilOdo').value = carData.last_oil_change_odo || '';
+  document.getElementById('lastFilterOdo').value = carData.last_filter_change_odo || '';
+}
+
+function saveMaintSettings() {
+  const shakenDate = document.getElementById('shakenDate').value;
+  const lastOilOdo = parseFloat(document.getElementById('lastOilOdo').value) || 0;
+  const lastFilterOdo = parseFloat(document.getElementById('lastFilterOdo').value) || 0;
+
+  if (!state.cars[currentCar]) state.cars[currentCar] = defaultState().cars[currentCar];
+  state.cars[currentCar].shaken_date = shakenDate;
+  state.cars[currentCar].last_oil_change_odo = lastOilOdo;
+  state.cars[currentCar].last_filter_change_odo = lastFilterOdo;
+  persistState();
+
+  document.getElementById('maintForm').style.display = 'none';
+  renderMaintStatus();
+  showMsg('✅ メンテナンス情報を保存しました', false);
+}
+
+function renderMaintStatus() {
+  const carData = state.cars[currentCar] || {};
+  let latestRecord = state.history.find(item => item.car === currentCar && item.odo > 0);
+  const currentOdo = latestRecord ? latestRecord.odo : 0;
+
+  const shakenBox = document.getElementById('maintShaKen');
+  if (carData.shaken_date) {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const target = new Date(carData.shaken_date);
+    const diffDays = Math.ceil((target - today) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 30) {
+      shakenBox.className = 'maint-status-item alert';
+      document.getElementById('shakenText').innerText = `${carData.shaken_date} （⚠️ あと ${diffDays} 日！）`;
+    } else {
+      shakenBox.className = 'maint-status-item';
+      document.getElementById('shakenText').innerText = `${carData.shaken_date} （あと約 ${diffDays} 日）`;
+    }
+  } else {
+    document.getElementById('shakenText').innerText = '未登録';
+  }
+
+  const oilBox = document.getElementById('maintOil');
+  if (carData.last_oil_change_odo > 0) {
+    const nextOilOdo = carData.last_oil_change_odo + 5000;
+    const leftKm = nextOilOdo - currentOdo;
+
+    if (currentOdo > 0 && leftKm <= 500) {
+      oilBox.className = 'maint-status-item alert';
+      document.getElementById('oilText').innerText = `前回:${carData.last_oil_change_odo}km ➔ 目安:${nextOilOdo}km （⚠️要交換）`;
+    } else {
+      oilBox.className = 'maint-status-item';
+      document.getElementById('oilText').innerText = `前回:${carData.last_oil_change_odo}km ➔ 目安:${nextOilOdo}km ${currentOdo > 0 ? '(あと' + leftKm + 'km)' : ''}`;
+    }
+  } else {
+    document.getElementById('oilText').innerText = '未登録';
+  }
+
+  const filterBox = document.getElementById('maintFilter');
+  if (carData.last_filter_change_odo > 0) {
+    const nextFilterOdo = carData.last_filter_change_odo + 10000;
+    const leftKm = nextFilterOdo - currentOdo;
+
+    if (currentOdo > 0 && leftKm <= 500) {
+      filterBox.className = 'maint-status-item alert';
+      document.getElementById('filterText').innerText = `前回:${carData.last_filter_change_odo}km ➔ 目安:${nextFilterOdo}km （⚠️要交換）`;
+    } else {
+      filterBox.className = 'maint-status-item';
+      document.getElementById('filterText').innerText = `前回:${carData.last_filter_change_odo}km ➔ 目安:${nextFilterOdo}km ${currentOdo > 0 ? '(あと' + leftKm + 'km)' : ''}`;
+    }
+  } else {
+    document.getElementById('filterText').innerText = '未登録';
+  }
+}
+
+function calculate() {
+  hideMsg();
+  const dateVal = document.getElementById('date').value;
+  const odo = parseFloat(document.getElementById('odo').value) || 0;
+  const isHighway = document.getElementById('isHighway').checked;
+
+  if (!dateVal) {
+    showMsg('⚠️ 日付を入力してください');
+    return;
+  }
+
+  let targetRange = 0;
+  let daily = 20;
+  let rangeBefore = 0;
+  let rangeAfter = 0;
+  let fuelAmount = 0;
+  let meterEco = null;
+
+  if (currentMode === 'fuel') {
+    rangeBefore = parseFloat(document.getElementById('rangeBefore').value) || 0;
+    rangeAfter = parseFloat(document.getElementById('rangeAfter').value) || 0;
+    fuelAmount = parseFloat(document.getElementById('fuelAmount').value) || 0;
+    daily = parseFloat(document.getElementById('dailyDistFuel').value) || 20;
+
+    targetRange = rangeAfter > 0 ? rangeAfter : rangeBefore;
+
+    if (rangeAfter > rangeBefore && fuelAmount > 0) {
+      meterEco = ((rangeAfter - rangeBefore) / fuelAmount).toFixed(1);
+    }
+  } else {
+    targetRange = parseFloat(document.getElementById('currentRangeMemo').value) || 0;
+    daily = parseFloat(document.getElementById('dailyDistMemo').value) || 20;
+  }
+
+  if (targetRange <= 0) {
+    showMsg(currentMode === 'fuel' ? '⚠️ 「給油【後】航続距離」を入力してください' : '⚠️ 「現在の航続可能距離」を入力してください');
+    return;
+  }
+
+  let prevRecord = state.history.find(item => item.car === currentCar && item.odo > 0);
+
+  let currentEconomy = null;
+  let drivenDist = null;
+  if (prevRecord && odo > prevRecord.odo && fuelAmount > 0) {
+    drivenDist = odo - prevRecord.odo;
+    currentEconomy = (drivenDist / fuelAmount).toFixed(1);
+  }
+
+  const safeRange = Math.max(0, targetRange - 50);
+  const daysLeft = Math.floor(safeRange / daily);
+
+  const refuelDate = new Date(dateVal);
+  refuelDate.setDate(refuelDate.getDate() + daysLeft);
+  const nextDateISO = refuelDate.toISOString().split('T')[0];
+  const dayNames = ['日','月','火','水','木','金','土'];
+  const nextDateStr = `${refuelDate.getMonth() + 1}月${refuelDate.getDate()}日(${dayNames[refuelDate.getDay()]})`;
+
+  document.getElementById('meterEcoVal').innerText = meterEco ? meterEco : '-';
+  document.getElementById('realEcoVal').innerText = currentEconomy ? currentEconomy : '-';
+  document.getElementById('highwayBadge').style.display = isHighway ? 'inline-block' : 'none';
+
+  const pct = Math.min(100, Math.max(5, (targetRange / 600) * 100));
+  document.getElementById('gaugeBar').style.width = pct + '%';
+  document.getElementById('gaugeBar').style.background = pct < 20 ? '#dc3545' : 'var(--success)';
+
+  saveRecord({
+    car: currentCar, mode: currentMode, date: dateVal, odo, rangeBefore, rangeAfter,
+    targetRange, fuelAmount, daily, isHighway, meterEco, currentEconomy, drivenDist, nextDateISO, nextDateStr
+  });
+
+  updateStaggerDashboard();
+  renderTimeline();
+  renderHistory();
+  renderMaintStatus();
+  document.getElementById('resultCard').style.display = 'block';
+
+  showMsg('✅ 記録し、タイムラインを更新しました！', false);
+}
+
+function saveRecord(record) {
+  state.history.unshift(record);
+  persistState();
+}
+
+function updateStaggerDashboard() {
+  let sLast = state.history.find(item => item.car === 'S-car' && item.nextDateISO);
+  let eLast = state.history.find(item => item.car === 'E-car' && item.nextDateISO);
+
+  if (sLast && eLast) {
+    const d1 = new Date(sLast.nextDateISO);
+    const d2 = new Date(eLast.nextDateISO);
+    const diffDays = Math.abs(Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+
+    if (diffDays >= 8 && diffDays <= 13) {
+      document.getElementById('staggerStatus').innerText = `🎯 理想的な${diffDays}日ラグを維持中！`;
+      document.getElementById('staggerStatus').style.color = '#4ade80';
+    } else {
+      document.getElementById('staggerStatus').innerText = `⚠️ 給油ズレ: ${diffDays}日間（10日前後が理想です）`;
+      document.getElementById('staggerStatus').style.color = '#fbbf24';
+    }
+  } else {
+    document.getElementById('staggerStatus').innerText = '2台分のデータを登録すると間隔を判定します';
+  }
+}
+
+function renderTimeline() {
+  let sLast = state.history.find(item => item.car === 'S-car' && item.nextDateISO);
+  let eLast = state.history.find(item => item.car === 'E-car' && item.nextDateISO);
+  const container = document.getElementById('timelineList');
+
+  if (!sLast && !eLast) {
+    container.innerHTML = '<div style="font-size:0.85rem; color:#888;">給油データを入力するとタイムラインが生成されます</div>';
+    return;
+  }
+
+  let timelineItems = [];
+  const dayNames = ['日','月','火','水','木','金','土'];
+
+  if (sLast) {
+    let d = new Date(sLast.nextDateISO);
+    for(let i=0; i<2; i++) {
+      timelineItems.push({ car: 'S-car', dateISO: d.toISOString().split('T')[0], dateStr: `${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`, dayIdx: d.getDay() });
+      d.setDate(d.getDate() + 21);
+    }
+  }
+
+  if (eLast) {
+    let d = new Date(eLast.nextDateISO);
+    for(let i=0; i<2; i++) {
+      timelineItems.push({ car: 'E-car', dateISO: d.toISOString().split('T')[0], dateStr: `${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`, dayIdx: d.getDay() });
+      d.setDate(d.getDate() + 21);
+    }
+  }
+
+  timelineItems.sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  let html = '';
+  timelineItems.forEach((item) => {
+    const itemDate = new Date(item.dateISO);
+    const diffDays = Math.ceil((itemDate - today) / (1000 * 60 * 60 * 24));
+    let daysText = diffDays > 0 ? `（あと ${diffDays} 日）` : diffDays === 0 ? '（今日給油！）' : '（給油時期を過ぎています）';
+    let dayTagClass = (item.dayIdx === 0 || item.dayIdx === 6) ? 'day-sat' : 'day-weekday';
+    let dotClass = item.car === 'S-car' ? 's-car' : 'e-car';
+
+    html += `
+      <div class="tl-item">
+        <div class="tl-dot ${dotClass}"></div>
+        <div class="tl-content">
+          <div class="tl-header">
+            <span>${item.car === 'S-car' ? '🚘 S-car' : '🚐 E-car'}</span>
+            <span class="day-tag ${dayTagClass}">${item.dateStr}</span>
+          </div>
+          <div class="tl-sub">給油目安日 ${daysText}</div>
+        </div>
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+function renderHistory() {
+  const container = document.getElementById('historyList');
+  if (state.history.length === 0) { container.innerHTML = '<span style="color:#888;">履歴がありません</span>'; return; }
+
+  let html = '';
+  state.history.slice(0, 5).forEach((item) => {
+    let hwBadge = item.isHighway ? ' <span style="color:var(--highway); font-weight:bold;">[🛣️高速]</span>' : '';
+    let ecoBadge = item.mode === 'fuel' ? (item.currentEconomy ? `実燃費: ${item.currentEconomy}km/L` : '⛽️給油完了') : '📌給油なしメモ';
+    html += `
+      <div class="history-item">
+        <div class="history-head">
+          <span>[${item.car}] ${item.date}${hwBadge}</span>
+          <span style="color:var(--primary);">${ecoBadge}</span>
+        </div>
+        <div>ODO: ${item.odo ? item.odo + 'km' : '-'} ｜ 次回目安: <b>${item.nextDateStr}</b></div>
+      </div>
+    `;
+  });
+  container.innerHTML = html;
+}
+
+function clearHistory() {
+  if (confirm('すべての履歴データを消去しますか？')) {
+    state.history = [];
+    persistState();
+    renderHistory();
+    renderTimeline();
+    updateStaggerDashboard();
+    renderMaintStatus();
+    document.getElementById('resultCard').style.display = 'none';
+    showMsg('✅ データを消去しました', false);
+  }
+}
+
+syncStateFromCloud();
+</script>
+</body>
+</html>
