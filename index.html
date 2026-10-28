@@ -132,6 +132,19 @@
     .day-sat { background: #e8f0fe; color: var(--accent-s); }
     .day-weekday { background: #fff3e0; color: var(--accent-e); }
 
+    .stagger-sub { font-size: 0.78rem; color: #cbd5e1; line-height: 1.5; }
+
+    .plan-box {
+      background: #eef6ee; border: 1px solid #c8e6c9; border-radius: 10px;
+      padding: 10px 12px 2px; margin-bottom: 12px;
+    }
+    .plan-box .plan-title { font-size: 0.8rem; font-weight: bold; color: var(--success); margin-bottom: 6px; }
+    .plan-feedback {
+      margin-top: 10px; padding: 10px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.5;
+      background: #e6f4ea; color: #145c2c;
+    }
+    .plan-feedback.warn { background: #fef7e0; color: #8a5a00; }
+
     .history-item { border-bottom: 1px solid #f0f0f0; padding: 10px 0; font-size: 0.82rem; }
     .history-head { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 2px; }
   </style>
@@ -141,8 +154,9 @@
 <div class="sync-bar" id="cloudSyncIndicator"></div>
 
 <div class="stagger-banner">
-  <div class="stagger-title">🔄 2台給油サイクル状況（目標:10日ズレ）</div>
+  <div class="stagger-title">🔄 2台給油サイクル（週1回・少量給油）</div>
   <div id="staggerStatus" class="stagger-status">データ計算中...</div>
+  <div id="staggerSub" class="stagger-sub"></div>
 </div>
 
 <div class="car-tabs">
@@ -165,6 +179,20 @@
 
     <input type="radio" id="modeMemo" name="modeSelect" value="memo" onchange="setMode('memo')">
     <label for="modeMemo" class="mode-label">📌 給油なしメモ</label>
+  </div>
+
+  <div class="plan-box">
+    <div class="plan-title">🗓️ この車の給油プラン</div>
+    <div class="row">
+      <div class="col form-group">
+        <label for="planLiters">1回の給油量 (L)</label>
+        <input type="number" id="planLiters" step="0.5" inputmode="decimal" value="15" onchange="savePlanSettings()">
+      </div>
+      <div class="col form-group">
+        <label for="planCycle">給油の間隔 (日)</label>
+        <input type="number" id="planCycle" inputmode="numeric" value="7" onchange="savePlanSettings()">
+      </div>
+    </div>
   </div>
 
   <div class="checkbox-group">
@@ -280,6 +308,7 @@
     <div class="badge">今回実燃費: <span id="realEcoVal">-</span> km/L</div>
     <div id="highwayBadge" class="badge badge-highway" style="display:none;">🛣️ 高速走行あり</div>
   </div>
+  <div id="planFeedback" class="plan-feedback" style="display:none;"></div>
 </div>
 
 <div class="card">
@@ -299,8 +328,8 @@ const STORAGE_KEY = 'gasManegimentState_v1';
 function defaultState() {
   return {
     cars: {
-      'S-car': { fuel_day_pattern: '土日給油', daily_distance_default: 20, shaken_date: '', last_oil_change_odo: 0, last_filter_change_odo: 0 },
-      'E-car': { fuel_day_pattern: '平日給油', daily_distance_default: 15, shaken_date: '', last_oil_change_odo: 0, last_filter_change_odo: 0 }
+      'S-car': { fuel_day_pattern: '土日給油', daily_distance_default: 20, shaken_date: '', last_oil_change_odo: 0, last_filter_change_odo: 0, target_liters: 15, cycle_days: 7 },
+      'E-car': { fuel_day_pattern: '平日給油', daily_distance_default: 15, shaken_date: '', last_oil_change_odo: 0, last_filter_change_odo: 0, target_liters: 15, cycle_days: 7 }
     },
     history: []
   };
@@ -401,10 +430,100 @@ function persistState() {
   scheduleCloudSync();
 }
 
+/* ================= 週1・少量給油プラン =================
+   各車「1回◯L・◯日おき」で給油する前提で次回日を決める。
+   - S-carは土日、E-carは平日に寄せる（±3日以内で一番近い日、同距離なら早い方）
+   - ただし航続距離が50kmを切る日より後にはしない（足りなければ前倒し）
+   プラン設定はクラウド側(GAS)が未対応の列を落としても消えないよう、端末にも控えを持つ。
+   ===================================================== */
+const PLAN_KEY = 'gasManegimentPlan_v1';
+const DEFAULT_TARGET_LITERS = 15;
+const DEFAULT_CYCLE_DAYS = 7;
+const SAFETY_KM = 50;
+const DAY_NAMES = ['日','月','火','水','木','金','土'];
+
+function loadLocalPlans() {
+  try { return JSON.parse(localStorage.getItem(PLAN_KEY)) || {}; } catch (e) { return {}; }
+}
+
+function getPlan(car) {
+  const c = state.cars[car] || {};
+  const local = loadLocalPlans()[car] || {};
+  const liters = parseFloat(c.target_liters) || parseFloat(local.target_liters) || DEFAULT_TARGET_LITERS;
+  const cycle = parseInt(c.cycle_days, 10) || parseInt(local.cycle_days, 10) || DEFAULT_CYCLE_DAYS;
+  return { liters, cycle };
+}
+
+function savePlanSettings() {
+  const liters = parseFloat(document.getElementById('planLiters').value) || DEFAULT_TARGET_LITERS;
+  const cycle = Math.max(1, parseInt(document.getElementById('planCycle').value, 10) || DEFAULT_CYCLE_DAYS);
+  if (!state.cars[currentCar]) state.cars[currentCar] = defaultState().cars[currentCar];
+  state.cars[currentCar].target_liters = liters;
+  state.cars[currentCar].cycle_days = cycle;
+  const plans = loadLocalPlans();
+  plans[currentCar] = { target_liters: liters, cycle_days: cycle };
+  localStorage.setItem(PLAN_KEY, JSON.stringify(plans));
+  persistState();
+  updateStaggerDashboard();
+  renderTimeline();
+}
+
+// 'YYYY-MM-DD' をローカル日付として扱う（UTCずれ防止）
+function parseISODate(s) {
+  const [y, m, d] = String(s).split('-').map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+function toISODate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function fmtDate(d) { return `${d.getMonth() + 1}月${d.getDate()}日(${DAY_NAMES[d.getDay()]})`; }
+function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
+
+function isPatternDay(car, d) {
+  const w = d.getDay();
+  const weekend = (w === 0 || w === 6);
+  return car === 'S-car' ? weekend : !weekend;
+}
+
+// fromDate: 今回の記録日 / baseDate: 本来の次回予定日 / maxDays: 航続距離から見た限界日数(nullなら制限なし)
+function planNextDate(car, fromDate, baseDate, maxDays) {
+  const minD = addDays(fromDate, 1);
+  const maxD = (maxDays === null || maxDays === undefined) ? null : addDays(fromDate, Math.max(1, maxDays));
+  let base = new Date(baseDate);
+  let capped = false;
+  if (maxD && base > maxD) { base = maxD; capped = true; }
+  const offsets = capped ? [0, -1, -2, -3, -4, -5, -6] : [0, -1, 1, -2, 2, -3, 3];
+  for (const off of offsets) {
+    const c = addDays(base, off);
+    if (c < minD) continue;
+    if (maxD && c > maxD) continue;
+    if (isPatternDay(car, c)) return { date: c, capped, patternOk: true };
+  }
+  return { date: base, capped, patternOk: false };
+}
+
+// 直近の燃費(km/L)の平均。満タン法の実燃費を優先し、なければ車載の想定燃費。
+function estimateEco(car) {
+  const vals = [];
+  for (const item of state.history) {
+    if (item.car !== car || item.mode !== 'fuel') continue;
+    const v = parseFloat(item.currentEconomy) || parseFloat(item.meterEco);
+    if (v > 3 && v < 40) vals.push(v);
+    if (vals.length >= 5) break;
+  }
+  if (!vals.length) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function latestPlanRecord(car) {
+  return state.history.find(item => item.car === car && item.nextDateISO);
+}
+
 let currentCar = 'S-car';
 let currentMode = 'fuel';
 
-document.getElementById('date').value = new Date().toISOString().split('T')[0];
+document.getElementById('date').value = toISODate(new Date());
 
 window.onload = function() {
   loadCarDefaults();
@@ -474,6 +593,9 @@ function loadCarDefaults() {
   const defaultVal = carData ? carData.daily_distance_default : (currentCar === 'S-car' ? 20 : 15);
   document.getElementById('dailyDistFuel').value = defaultVal;
   document.getElementById('dailyDistMemo').value = defaultVal;
+  const plan = getPlan(currentCar);
+  document.getElementById('planLiters').value = plan.liters;
+  document.getElementById('planCycle').value = plan.cycle;
 }
 
 function toggleMaintEdit() {
@@ -596,23 +718,39 @@ function calculate() {
     return;
   }
 
-  let prevRecord = state.history.find(item => item.car === currentCar && item.odo > 0);
+  // 実燃費は「前回の給油時ODO」からの距離で計算（メモ記録のODOは使わない）
+  let prevRecord = state.history.find(item => item.car === currentCar && item.mode === 'fuel' && item.odo > 0);
 
   let currentEconomy = null;
   let drivenDist = null;
-  if (prevRecord && odo > prevRecord.odo && fuelAmount > 0) {
+  if (currentMode === 'fuel' && prevRecord && odo > prevRecord.odo && fuelAmount > 0) {
     drivenDist = odo - prevRecord.odo;
-    currentEconomy = (drivenDist / fuelAmount).toFixed(1);
+    const eco = drivenDist / fuelAmount;
+    if (eco > 3 && eco < 40) currentEconomy = eco.toFixed(1);
   }
 
-  const safeRange = Math.max(0, targetRange - 50);
-  const daysLeft = Math.floor(safeRange / daily);
+  // ---- 週1・少量給油プランで次回日を決める ----
+  const plan = getPlan(currentCar);
+  const fromDate = parseISODate(dateVal);
+  const maxDays = Math.floor(Math.max(0, targetRange - SAFETY_KM) / daily);
 
-  const refuelDate = new Date(dateVal);
-  refuelDate.setDate(refuelDate.getDate() + daysLeft);
-  const nextDateISO = refuelDate.toISOString().split('T')[0];
-  const dayNames = ['日','月','火','水','木','金','土'];
-  const nextDateStr = `${refuelDate.getMonth() + 1}月${refuelDate.getDate()}日(${dayNames[refuelDate.getDay()]})`;
+  let baseDate = addDays(fromDate, plan.cycle);
+  if (currentMode === 'memo') {
+    // メモ時は前回決めた予定日を基本に、航続距離が足りるかだけ見直す
+    const last = latestPlanRecord(currentCar);
+    if (last) {
+      const lastDate = parseISODate(last.nextDateISO);
+      if (lastDate > fromDate) baseDate = lastDate;
+    }
+  }
+  const planned = planNextDate(currentCar, fromDate, baseDate, maxDays);
+  const refuelDate = planned.date;
+  const nextDateISO = toISODate(refuelDate);
+  const nextDateStr = fmtDate(refuelDate);
+
+  // ---- 15Lで1週間もつかの判定 ----
+  const ecoEst = parseFloat(currentEconomy) || parseFloat(meterEco) || estimateEco(currentCar);
+  renderPlanFeedback({ plan, daily, ecoEst, planned, nextDateStr, maxDays, targetRange });
 
   document.getElementById('meterEcoVal').innerText = meterEco ? meterEco : '-';
   document.getElementById('realEcoVal').innerText = currentEconomy ? currentEconomy : '-';
@@ -624,7 +762,8 @@ function calculate() {
 
   saveRecord({
     car: currentCar, mode: currentMode, date: dateVal, odo, rangeBefore, rangeAfter,
-    targetRange, fuelAmount, daily, isHighway, meterEco, currentEconomy, drivenDist, nextDateISO, nextDateStr
+    targetRange, fuelAmount, daily, isHighway, meterEco, currentEconomy, drivenDist, nextDateISO, nextDateStr,
+    planLiters: plan.liters, planCycle: plan.cycle
   });
 
   updateStaggerDashboard();
@@ -641,30 +780,85 @@ function saveRecord(record) {
   persistState();
 }
 
-function updateStaggerDashboard() {
-  let sLast = state.history.find(item => item.car === 'S-car' && item.nextDateISO);
-  let eLast = state.history.find(item => item.car === 'E-car' && item.nextDateISO);
+function renderPlanFeedback({ plan, daily, ecoEst, planned, nextDateStr, maxDays, targetRange }) {
+  const box = document.getElementById('planFeedback');
+  const lines = [];
+  let warn = false;
 
-  if (sLast && eLast) {
-    const d1 = new Date(sLast.nextDateISO);
-    const d2 = new Date(eLast.nextDateISO);
-    const diffDays = Math.abs(Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
-
-    if (diffDays >= 8 && diffDays <= 13) {
-      document.getElementById('staggerStatus').innerText = `🎯 理想的な${diffDays}日ラグを維持中！`;
-      document.getElementById('staggerStatus').style.color = '#4ade80';
+  if (ecoEst) {
+    const weekKm = daily * plan.cycle;
+    const litersNeeded = weekKm / ecoEst;
+    const kmPerFill = plan.liters * ecoEst;
+    const daysPerFill = kmPerFill / daily;
+    if (litersNeeded <= plan.liters * 1.05) {
+      lines.push(`✅ 毎回${plan.liters}L入れれば約${Math.round(kmPerFill)}km（約${daysPerFill.toFixed(0)}日分）。${plan.cycle}日おきでOKです。`);
+      lines.push(`${plan.cycle}日間の消費見込み: 約${litersNeeded.toFixed(1)}L（燃費${ecoEst.toFixed(1)}km/L・1日${daily}km）`);
     } else {
-      document.getElementById('staggerStatus').innerText = `⚠️ 給油ズレ: ${diffDays}日間（10日前後が理想です）`;
-      document.getElementById('staggerStatus').style.color = '#fbbf24';
+      warn = true;
+      lines.push(`⚠️ ${plan.cycle}日で約${litersNeeded.toFixed(1)}L使う見込み。${plan.liters}Lだと約${daysPerFill.toFixed(0)}日分です。`);
+      lines.push(`${plan.cycle}日おきにするなら、1回 ${Math.ceil(litersNeeded)}L前後が目安です。`);
     }
   } else {
-    document.getElementById('staggerStatus').innerText = '2台分のデータを登録すると間隔を判定します';
+    lines.push(`ℹ️ 燃費データが貯まると「${plan.liters}Lで${plan.cycle}日もつか」を判定します（給油量とODOを入れてください）。`);
   }
+
+  if (planned.capped) {
+    warn = true;
+    lines.push(`⛽ 航続距離${targetRange}kmだと残り${SAFETY_KM}kmまで約${maxDays}日なので、次回を ${nextDateStr} に前倒ししました。`);
+  } else {
+    lines.push(`📅 次回の給油目安: <b>${nextDateStr}</b>（${plan.liters}L）`);
+  }
+  if (!planned.patternOk) {
+    lines.push(`※ ${currentCar === 'S-car' ? '土日' : '平日'}に合わせられなかったので、近い日にしています。`);
+  }
+
+  box.innerHTML = lines.join('<br>');
+  box.className = 'plan-feedback' + (warn ? ' warn' : '');
+  box.style.display = 'block';
+}
+
+function updateStaggerDashboard() {
+  const sLast = latestPlanRecord('S-car');
+  const eLast = latestPlanRecord('E-car');
+  const status = document.getElementById('staggerStatus');
+  const sub = document.getElementById('staggerSub');
+
+  if (sLast && eLast) {
+    const d1 = parseISODate(sLast.nextDateISO);
+    const d2 = parseISODate(eLast.nextDateISO);
+    const raw = Math.abs(daysBetween(d1, d2));
+    const cycle = Math.max(getPlan('S-car').cycle, getPlan('E-car').cycle);
+    const mod = raw % cycle;
+    const offset = Math.min(mod, cycle - mod); // 週1サイクル上で何日ずれているか
+
+    if (offset >= 2) {
+      status.textContent = `🎯 給油日が${offset}日ずれて分散できています`;
+      status.style.color = '#4ade80';
+    } else {
+      status.textContent = `⚠️ 2台の給油日が近いです（${offset}日差）`;
+      status.style.color = '#fbbf24';
+    }
+  } else {
+    status.textContent = '2台分のデータを登録すると給油日の分散を判定します';
+    status.style.color = '#38bdf8';
+  }
+
+  const parts = [];
+  ['S-car', 'E-car'].forEach(car => {
+    const p = getPlan(car);
+    const last = latestPlanRecord(car);
+    const icon = car === 'S-car' ? '🚘' : '🚐';
+    parts.push(`${icon} ${car}: ${p.liters}L / ${p.cycle}日おき${last ? ` ・次回 ${fmtDate(parseISODate(last.nextDateISO))}` : ''}`);
+  });
+  const sp = getPlan('S-car'), ep = getPlan('E-car');
+  const weekly = (sp.liters * 7 / sp.cycle) + (ep.liters * 7 / ep.cycle);
+  parts.push(`⛽ 2台合計 週あたり約${weekly.toFixed(0)}L`);
+  sub.innerHTML = parts.join('<br>');
 }
 
 function renderTimeline() {
-  let sLast = state.history.find(item => item.car === 'S-car' && item.nextDateISO);
-  let eLast = state.history.find(item => item.car === 'E-car' && item.nextDateISO);
+  const sLast = latestPlanRecord('S-car');
+  const eLast = latestPlanRecord('E-car');
   const container = document.getElementById('timelineList');
 
   if (!sLast && !eLast) {
@@ -673,33 +867,26 @@ function renderTimeline() {
   }
 
   let timelineItems = [];
-  const dayNames = ['日','月','火','水','木','金','土'];
 
-  if (sLast) {
-    let d = new Date(sLast.nextDateISO);
-    for(let i=0; i<2; i++) {
-      timelineItems.push({ car: 'S-car', dateISO: d.toISOString().split('T')[0], dateStr: `${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`, dayIdx: d.getDay() });
-      d.setDate(d.getDate() + 21);
+  [['S-car', sLast], ['E-car', eLast]].forEach(([car, last]) => {
+    if (!last) return;
+    const plan = getPlan(car);
+    let d = parseISODate(last.nextDateISO);
+    for (let i = 0; i < 2; i++) {
+      timelineItems.push({ car, dateISO: toISODate(d), dateStr: fmtDate(d), dayIdx: d.getDay(), liters: plan.liters });
+      d = planNextDate(car, d, addDays(d, plan.cycle), null).date;
     }
-  }
+  });
 
-  if (eLast) {
-    let d = new Date(eLast.nextDateISO);
-    for(let i=0; i<2; i++) {
-      timelineItems.push({ car: 'E-car', dateISO: d.toISOString().split('T')[0], dateStr: `${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`, dayIdx: d.getDay() });
-      d.setDate(d.getDate() + 21);
-    }
-  }
-
-  timelineItems.sort((a, b) => new Date(a.dateISO) - new Date(b.dateISO));
+  timelineItems.sort((a, b) => parseISODate(a.dateISO) - parseISODate(b.dateISO));
 
   const today = new Date();
   today.setHours(0,0,0,0);
 
   let html = '';
   timelineItems.forEach((item) => {
-    const itemDate = new Date(item.dateISO);
-    const diffDays = Math.ceil((itemDate - today) / (1000 * 60 * 60 * 24));
+    const itemDate = parseISODate(item.dateISO);
+    const diffDays = daysBetween(today, itemDate);
     let daysText = diffDays > 0 ? `（あと ${diffDays} 日）` : diffDays === 0 ? '（今日給油！）' : '（給油時期を過ぎています）';
     let dayTagClass = (item.dayIdx === 0 || item.dayIdx === 6) ? 'day-sat' : 'day-weekday';
     let dotClass = item.car === 'S-car' ? 's-car' : 'e-car';
@@ -712,7 +899,7 @@ function renderTimeline() {
             <span>${item.car === 'S-car' ? '🚘 S-car' : '🚐 E-car'}</span>
             <span class="day-tag ${dayTagClass}">${item.dateStr}</span>
           </div>
-          <div class="tl-sub">給油目安日 ${daysText}</div>
+          <div class="tl-sub">給油目安日 ${daysText} ・ 約${item.liters}L</div>
         </div>
       </div>
     `;
@@ -735,7 +922,7 @@ function renderHistory() {
           <span>[${item.car}] ${item.date}${hwBadge}</span>
           <span style="color:var(--primary);">${ecoBadge}</span>
         </div>
-        <div>ODO: ${item.odo ? item.odo + 'km' : '-'} ｜ 次回目安: <b>${item.nextDateStr}</b></div>
+        <div>ODO: ${item.odo ? item.odo + 'km' : '-'}${item.mode === 'fuel' && item.fuelAmount ? ` ｜ ${item.fuelAmount}L` : ''} ｜ 次回目安: <b>${item.nextDateStr}</b></div>
       </div>
     `;
   });
